@@ -1,0 +1,242 @@
+from collections import defaultdict
+from models import Patent
+from nltk.stem.snowball import SnowballStemmer
+import text_cleanup
+
+all_documents = list()
+individual_patent = Patent()
+ucid = individual_patent.ucid
+claim_text = individual_patent.allClaimsText
+# document_word_list = text_cleanup.normalize(claim_text)
+
+# to do: refactor code in original_code_with_alphabetization so that both
+# the matrix and the csv writer can use the same functions for normalizing,
+# editing stopwords, and creating a stemmed list.
+
+patentsToRequest = 100000
+myPatents = individual_patent.select(ucid, claim_text).limit(patentsToRequest)
+
+count = 0
+print "Requesting " + str(patentsToRequest) + " records."
+
+
+# document_word_list = text_cleanup.normalize(claim_text)
+
+# all_stems = stem_word_list(document_word_list)
+# document_word_count = create_frequency(all_stems)
+# stem_count = 0
+
+
+
+
+# columns = list(set(list(chain(romeo.keys(), caesar.keys()))))
+# rows = list(set(list(all_documents)))
+# columns = list(set(list(document_word_count.keys())))
+#
+#
+# matrix = defaultdict(dict)
+
+
+Classes_dataset = {
+        'description': 'CPC Classes',
+        'relation': 'Classes',
+        'attributes': [
+            ('ClassMain', 'STRING'),
+            ('ClassFurther', 'STRING'),
+        ],
+        'data': [
+            ['F01N', 'F02D'],
+            ['F01N', 'F02B'],
+            ['F01N', 'Y02T'],
+            ['F01N', 'B01D']
+        ]
+    }
+
+    Classes_dataset['data'][:] = []
+    ClassMainList = []
+    ClassFurtherList = []
+
+
+
+    for p in myPatents:
+        if p.CPCmain and p.CPCfurther:
+            #print "main: " + p.CPCmain + ", Fur:" + p.CPCfurther
+            count = count + 1
+            for cpcFurtherClass in [x.strip() for x in p.CPCfurther.split(',')]:
+                Classes_dataset['data'].append([p.CPCmain, cpcFurtherClass])
+                ClassFurtherList.append(cpcFurtherClass)
+                ClassMainList.append(p.CPCmain)
+                print "main: " + p.CPCmain + ", Fur:" + cpcFurtherClass
+
+    print "Received " + str(count) + " records with a CPC Main and Further class."
+
+    Classes_dataset['attributes'] = [
+            ('ClassMain', list(set(ClassMainList))),
+            ('ClassFurther', list(set(ClassFurtherList)))]
+
+    # http://stackoverflow.com/questions/25916731/how-to-write-in-arff-file-using-liac-arff-package-in-python
+    f = open('trainarff.arff', 'wb')
+    arff.dump(Classes_dataset, f)
+    f.close()
+
+    print "bob: " + str(Classes_dataset['data'])
+except Exception, e:
+    print "makeARFF: " + str(e)
+    pass
+
+
+def search_and_store(xml_file, storage, search_terms):
+    for s in search_terms:
+        add_to_storage(xml_file, storage, s)
+    return storage
+
+
+def normalize_and_stem(extracted_text):
+    cleaned_text = text_cleanup.normalize(extracted_text)
+    return text_cleanup.stem_word_list(cleaned_text)
+
+
+def storage_from_files():
+    storage = dict()
+    os.chdir(baseDir)
+    for file_found in [f for f in os.listdir(baseDir) if f.endswith('xml')]:
+        storage = search_and_store(file_found, storage, ['abstract', 'claim1Text', 'allClaimsText'])
+    return storage
+
+def createLoadNLCDictionary():
+    NLCdictionary = dict()  # main dictionary to hold each record(dictionary)
+    os.chdir(baseDir)
+    for file_found in [f for f in os.listdir(baseDir) if f.endswith('xml')]:
+        try:
+            # todo: look at segment-0618.xml from 07/26/2016, fix xsl to compensate
+            patentValueList = get_values_from_xml_file(file_found, ['ucid', 'abstract', 'cpcMain'])
+            ucid = patentValueList[0]
+
+            if not (ucid.startswith('D') or ucid.startswith('PP') or ucid.endswith(
+                    'SEQ')):  # if UCID starts with D (design) or send with SEQ (DNA sequence), then skip it
+                NLCIndivRecord = dict()  # New dict to hold individual record from xml file
+
+                # This would be the place to call the summarizer on the abstract: patentValueList[1]
+
+                abstract = prepare_Abstract_for_NLC(ucid, patentValueList[1].decode('utf-8'))
+
+                NLCIndivRecord[ucid] = [abstract.decode("utf-8"), patentValueList[2].decode('utf-8')]
+                NLCdictionary.update(NLCIndivRecord)
+                print "updated dictionary"
+        except Exception, e:
+            print " createLoadNLCDictionary: " + str(e)
+            pass
+
+    print "loop?"
+    return NLCdictionary
+
+
+def print_the_storage():
+    os.chdir(baseDir)
+    collected_results = storage_from_files()
+    key_index = collected_results.keys()
+    for k in key_index:
+        print "{} with {}".format(k, collected_results[k])
+
+# for coll in ('romeo', 'caesar'):
+#     matrix[coll] = {}
+#     for key in columns:
+#         if dicts[coll].has_key(key):
+#             matrix[coll][key] = dicts[coll][key]
+#         else:
+#             matrix[coll][key] = 0
+#
+# print columns
+
+# for r in rows:
+#     matrix[r] = {}
+#     for key in columns:
+#         if r in matrix:
+#             new_count = document_word_count[r][key] + matrix[r][key]
+#             matrix[r][key] = new_count
+#         else:
+#             matrix[r][key] = document_word_count[r][key]
+#
+# print columns
+#
+#
+# for coll in matrix.keys():
+#     for key in columns:
+#         print matrix[coll][key],
+#     print '\n'
+
+
+
+down vote
+accepted
+This works, tested:
+
+from itertools import chain
+from collections import defaultdict
+
+romeo = {'alas':2, 'juliet':35, 'hello':1}
+caesar = {'et':1, 'tu':3, 'cassius':12, 'hello':1}
+
+dicts = defaultdict(dict)
+dicts['romeo'] = romeo
+dicts['caesar'] = caesar
+
+columns = list(set(list(chain(romeo.keys(), caesar.keys()))))
+
+matrix = defaultdict(dict)
+
+for coll in ('romeo', 'caesar'):
+    matrix[coll] = {}
+    for key in columns:
+        if dicts[coll].has_key(key):
+            matrix[coll][key] = dicts[coll][key]
+        else:
+            matrix[coll][key] = 0
+
+print columns
+
+for coll in matrix.keys():
+    for key in columns:
+        print matrix[coll][key], 
+    print '\n'
+
+
+
+def write_csv_file(csv_file):
+    collected_results = storage_from_files()
+    key_index = collected_results.keys()
+    # #         file_check()
+    os.chdir(baseDir)
+    with open(baseDir + csv_file, 'wb') as csvfile:
+        csvwriter = csv.writer(csvfile, delimiter=',')
+        try:
+            for k in key_index:
+                all_entries = collected_results[k]
+                csvwriter.writerow([all_entries[0], all_entries[1], all_entries[2]])
+        except UnicodeDecodeError:
+            pass
+        except UnicodeEncodeError:
+            pass
+
+
+def write_Watson_training_csv_file(csv_file):
+    collected_results = createLoadNLCDictionary()  # dictionary of dictionaries
+    key_index = collected_results.keys()
+
+    with open(baseDir + csv_file, 'wb') as csvfile:
+        csvwriter = csv.writer(csvfile, delimiter=',')
+        for k in key_index:
+            try:
+                # print "key index" + k
+                all_entries = collected_results[k]
+                csvwriter.writerow([all_entries[0].encode("utf-8"), all_entries[1].encode("utf-8")])
+            except Exception, e:
+                print "write_Watson_training_csv_file: " + k + ' ' + str(e)
+                pass
+
+
+if not (singlePatent['Patent'].startswith(("PP", "RE", "D")) or singlePatent['Patent'].endswith(("SEQ"))):
+
+
+
+
